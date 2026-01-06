@@ -26,7 +26,10 @@ fn find_key<'a>(hay_stack: &'a mut FreqKVs, needle: &str) -> Option<&'a mut Freq
     None // Return None if not found
 }
 
-fn naive_analysis(content: &str) {
+fn naive_analysis(content: &str, file_path: &str) {
+    info!("Analysing {} using NAIVE METHOD", &file_path);
+    info!(" Size: {} bytes", content.len());
+
     let start = Instant::now();
 
     let mut freq = FreqKVs::default();
@@ -63,6 +66,64 @@ fn naive_analysis(content: &str) {
     info!(" Elapsed time {:.4}s", duration.as_secs_f32());
 }
 
+fn hash_analysis(content: &str, file_path: &str) {
+    info!("Analysing {} using HASH METHOD", &file_path);
+    info!(" Size: {} bytes", content.len());
+
+    let start = Instant::now();
+
+    let content = content.trim_start();
+    let token = content.split_whitespace();
+
+    let mut ht: FreqKVs = Default::default();
+    hash_init(&mut ht, 10_000); // !NOTE: vec allocation 
+
+    info!(" Just Tokens: ");
+    for (i, t) in token.enumerate() {
+        let mut h = hash(t.as_bytes(), t.len()) % ht.capacity as u32;
+        // info!("   {}: 0x{:08X} = {}", i, h, t);
+
+        // looking for a free hash that will not collide
+        for _i in 0..ht.capacity {
+            if ht.items[h as usize].occupied && ht.items[h as usize].key != t {
+                h = (h + 1) % ht.capacity as u32;
+            }
+        }
+
+        if ht.items[h as usize].occupied {
+            if ht.items[h as usize].key != t {
+                error!("Table overflow");
+                panic!();
+            }
+            ht.items[h as usize].value += 1;
+        } else {
+            ht.items[h as usize].occupied = true;
+            ht.items[h as usize].key = t.to_string();
+            ht.items[h as usize].value = 1;
+        }
+    }
+
+    let duration = start.elapsed();
+
+    let mut freq: FreqKVs = Default::default();
+
+    info!(" Slots of the Hash Table:");
+    for i in 0..ht.capacity {
+        if ht.items[i].occupied {
+            push_item_to_array(&mut freq, ht.items[i].clone()); // clone is acceptable here for performance
+        }
+    }
+
+    // sort in place
+    freq.items.sort_by(|a, b| b.value.cmp(&a.value));
+    info!(" Top 10 tokens");
+    for (i, kv) in freq.items.iter().take(10).enumerate() {
+        info!("   {}: {} => {}", i, kv.key, kv.value);
+    }
+
+    info!(" Elapsed time {:.4}s", duration.as_secs_f32());
+}
+
 fn push_item_to_array(freq: &mut FreqKVs, new_kv: FreqKV) {
     freq.items.push(new_kv);
     freq.count += 1;
@@ -82,6 +143,12 @@ fn hash(buf: &[u8], buf_size: usize) -> u32 {
     result
 }
 
+fn hash_init(ht: &mut FreqKVs, capacity: usize) {
+    ht.items = vec![FreqKV::default(); capacity];
+    ht.count = 0;
+    ht.capacity = capacity;
+}
+
 fn main() {
     env_logger::init();
 
@@ -95,37 +162,10 @@ fn main() {
     let file_path = &args[1];
     let buffer = fs::read(file_path).expect("unable to read file into bytes");
 
-    info!("Analysing {}", &file_path);
-    info!(" Size: {} bytes", &buffer.len());
-
     // convert buffer to string view
     let buffer = String::from_utf8(buffer).expect("unable to convert buffer to string");
     let content: &str = &buffer;
 
-    let content = content.trim_start();
-    let token = content.split_whitespace();
-
-    const N: usize = 1000;
-    let mut slots = vec![FreqKV::default(); N]; // !NOTE: vec allocation 
-
-    info!(" Just Tokens: ");
-    for (i, t) in token.take(100).enumerate() {
-        let h = hash(t.as_bytes(), t.len()) % N as u32;
-        info!("   {}: 0x{:08X} = {}", i, h, t);
-
-        if slots[h as usize].occupied {
-            if slots[h as usize].key == t {
-                slots[h as usize].value += 1;
-            } else {
-                info!("  Collided 0x{:08X} at {}", h, i);
-                break;
-            }
-        } else {
-            slots[h as usize].occupied = true;
-            slots[h as usize].key = t.to_string();
-            slots[h as usize].value = 1;
-        }
-    }
-
-    // naive_analysis(content);
+    naive_analysis(content, file_path);
+    hash_analysis(content, file_path);
 }
