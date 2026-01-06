@@ -76,17 +76,19 @@ fn hash_analysis(content: &str, file_path: &str) {
     let token = content.split_whitespace();
 
     let mut ht: FreqKVs = Default::default();
-    hash_init(&mut ht, 10_000); // !NOTE: vec allocation 
+    hash_init(&mut ht, 100_000); // !NOTE: vec allocation 
 
     info!(" Just Tokens: ");
     for (i, t) in token.enumerate() {
-        let mut h = hash(t.as_bytes(), t.len()) % ht.capacity as u32;
+        let mut h = hash_djb2(t.as_bytes()) % ht.capacity as u32;
         // info!("   {}: 0x{:08X} = {}", i, h, t);
 
         // looking for a free hash that will not collide
         for _i in 0..ht.capacity {
             if ht.items[h as usize].occupied && ht.items[h as usize].key != t {
                 h = (h + 1) % ht.capacity as u32;
+            } else {
+                break; // exit loop early
             }
         }
 
@@ -133,11 +135,20 @@ fn push_item_to_array(freq: &mut FreqKVs, new_kv: FreqKV) {
 // Thinking: must I pass the buf_size?
 // Maybe the buf_size allows to use sub-buffers in the buffer.
 // Is this good design?
-fn hash(buf: &[u8], buf_size: usize) -> u32 {
+fn hash(buf: &[u8]) -> u32 {
     let mut result: u32 = 0;
-    for byte in buf.iter().take(buf_size) {
-        (result, _) = result.overflowing_mul(13);
-        result += *byte as u32;
+    for b in buf {
+        (result, _) = result.overflowing_mul(31);
+        result += *b as u32;
+    }
+
+    result
+}
+
+fn hash_djb2(buf: &[u8]) -> u32 {
+    let mut result: u32 = 0;
+    for b in buf {
+        result = (result << 5).wrapping_add(result).wrapping_add(*b as u32);
     }
 
     result
@@ -166,6 +177,6 @@ fn main() {
     let buffer = String::from_utf8(buffer).expect("unable to convert buffer to string");
     let content: &str = &buffer;
 
-    naive_analysis(content, file_path);
+    // naive_analysis(content, file_path);
     hash_analysis(content, file_path);
 }
