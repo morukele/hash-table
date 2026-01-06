@@ -2,6 +2,11 @@
 
 An educational and recreational attempt to program a hash table implementation using Rust.
 
+For the hash function, I used two function:
+
+- A basic hash function
+- the djb2 hash function
+
 > This is not for production purposes. Please use std::Hashmap.
 
 The code can be tested with
